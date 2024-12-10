@@ -1,0 +1,166 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+    <title>Video Streams</title>
+
+    <!-- Import Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.4.1/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: #121212;
+            color: #ffffff;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            height: 100vh;
+        }
+
+        h1 {
+            margin: 20px 0;
+            font-size: 2em;
+            color: #ffffff;
+        }
+
+        #controls {
+            margin: 20px 0;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #stream-selector {
+            padding: 10px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            background-color: #1f1f1f;
+            color: #ffffff;
+        }
+
+        #stream-selector:focus {
+            outline: 2px solid #3949ab;
+        }
+
+        #video-canvas {
+            border: 2px solid #333;
+            margin-top: 20px;
+            max-width: 90%;
+            background-color: #000;
+        }
+
+        #decryption-toggle-btn {
+            padding: 10px 20px;
+            font-size: 16px;
+            color: #ffffff;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s ease;
+            background-color: #4CAF50; /* Red by default, will update on status */
+        }
+
+        #decryption-toggle-btn:hover {
+            filter: brightness(0.9);
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Live Video Streams</h1>
+    <div id="controls">
+        <select id="stream-selector"></select>
+        <!-- Removed inline onclick, will add via JS -->
+        <button id="decryption-toggle-btn">Decrypt</button>
+    </div>
+    <canvas id="video-canvas" width="1280" height="720"></canvas>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            var video = io('/video');
+
+            // Define the toggleDecryption function here so it has access to 'video'
+            function toggleDecryption() {
+                video.emit("toggle_decryption");
+            }
+
+            // Attach the event listener to the button
+            const decryptButton = document.getElementById("decryption-toggle-btn");
+            decryptButton.addEventListener("click", toggleDecryption);
+
+            // When a new stream is selected from the dropdown, request it
+            document.getElementById("stream-selector").addEventListener("change", () => {
+                const streamId = document.getElementById("stream-selector").value;
+                if (streamId) {
+                    console.log(`Requesting stream: ${streamId}`);
+                    video.emit("select_stream", { stream_id: streamId });
+                }
+            });
+
+            video.on('connect', () => {
+                console.log("Connected to /video");
+                video.emit("get_stream_list");
+            });
+
+            video.on("stream_list_update", (streams) => {
+                console.log("Received stream_list_update event:", streams);
+
+                const streamSelector = document.getElementById("stream-selector");
+                streamSelector.innerHTML = "";
+                streams.forEach((streamId) => {
+                    console.log("Adding stream to selector:", streamId);
+                    const option = document.createElement("option");
+                    option.value = streamId;
+                    option.textContent = streamId;
+                    streamSelector.appendChild(option);
+                });
+
+                // Automatically select the first stream if available
+                if (streams.length > 0) {
+                    const selectedStream = streams[0];
+                    console.log("Automatically selecting first stream:", selectedStream);
+                    streamSelector.value = selectedStream;
+                    // Immediately request this stream
+                    video.emit("select_stream", { stream_id: selectedStream });
+                    console.log("Emitted select_stream for stream_id:", selectedStream);
+                } else {
+                    console.log("No streams available to select.");
+                }
+            });
+
+            // Update UI based on decryption status
+            video.on("decryption_status", (data) => {
+                const btn = document.getElementById("decryption-toggle-btn");
+                // When enabled, make it green
+                // When disabled, make it red
+                btn.style.backgroundColor = data.enabled ? "#4CAF50" : "#f44336";
+            });
+
+            // Display the selected stream's video
+            video.on("broadcast_frame", (data) => {
+                const streamId = document.getElementById("stream-selector").value;
+                if (data.stream_id === streamId) {
+                    const img = new Image();
+                    img.src = "data:image/jpeg;base64," + data.frame;
+                    img.onload = () => {
+                        const canvas = document.getElementById("video-canvas");
+                        const ctx = canvas.getContext("2d");
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    };
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>
